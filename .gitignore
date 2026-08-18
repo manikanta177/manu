@@ -1,0 +1,25 @@
+# Python virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment variables / secrets
+.env
+.env.*
+
+# IDE/editor files
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Local AI/model files
+models/
+*.gguf
+
+# OS files
+.DS_Store
+Thumbs.db
