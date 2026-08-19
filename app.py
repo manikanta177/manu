@@ -1,65 +1,152 @@
 import requests
 import json
-import time
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
-MODEL = "qwen3:4b"
 
-message = input("You: ")
+FAST_MODEL = "qwen3:1.7b"
+THINK_MODEL = "qwen3:4b"
 
-data = {
-    "model": MODEL,
-    "messages": [
-        {
-            "role": "user",
-            "content": message
-        }
-    ],
-    "stream": True
-}
+current_model = FAST_MODEL
+thinking_enabled = False
 
-start = time.time()
-first_token_time = None
+messages = [
+    {
+        "role": "system",
+        "content": (
+            "You are MANU, a personal AI assistant. "
+            "Be concise for simple questions and detailed only when necessary. "
+            "Do not repeat the user's question. "
+            "Avoid unnecessary introductions, excessive emojis, and long explanations. "
+            "Give clear, direct and useful answers."
+        )
+    }
+]
 
-try:
-    response = requests.post(
-        OLLAMA_URL,
-        json=data,
-        stream=True
-    )
+print("================================")
+print("          MANU V0.2")
+print("     Local Personal AI Agent")
+print("================================")
+print("Commands:")
+print("/clear  - clear conversation")
+print("/think  - switch to deep reasoning mode")
+print("/fast   - switch to fast mode")
+print("/exit   - exit MANU")
+print()
 
-    response.raise_for_status()
+while True:
+    message = input("You: ").strip()
 
-    print("MANU: ", end="", flush=True)
+    if not message:
+        continue
 
-    for line in response.iter_lines():
-        if not line:
-            continue
+    # Exit
+    if message.lower() == "/exit":
+        print("MANU: Goodbye!")
+        break
 
-        chunk = json.loads(line)
+    # Clear conversation
+    if message.lower() == "/clear":
+        messages = [messages[0]]
+        print("MANU: Conversation memory cleared.")
+        print()
+        continue
 
-        if chunk.get("done"):
-            break
+    # Enable deep reasoning
+    if message.lower() == "/think":
+        current_model = THINK_MODEL
+        thinking_enabled = True
+        print("MANU: Deep reasoning mode enabled.")
+        print()
+        continue
 
-        content = chunk.get("message", {}).get("content", "")
+    # Enable fast mode
+    if message.lower() == "/fast":
+        current_model = FAST_MODEL
+        thinking_enabled = False
+        print("MANU: Fast mode enabled.")
+        print()
+        continue
 
-        if content:
-            if first_token_time is None:
-                first_token_time = time.time()
+    # Add user message to memory
+    messages.append({
+        "role": "user",
+        "content": message
+    })
 
-            print(content, end="", flush=True)
+    data = {
+        "model": current_model,
+        "messages": messages,
+        "think": thinking_enabled,
+        "stream": True
+    }
 
-    end = time.time()
+    assistant_response = ""
+    final_stats = None
 
-    print()
+    try:
+        response = requests.post(
+            OLLAMA_URL,
+            json=data,
+            stream=True,
+            timeout=300
+        )
 
-    if first_token_time:
-        print(f"First response: {first_token_time - start:.2f} seconds")
+        response.raise_for_status()
 
-    print(f"Total time: {end - start:.2f} seconds")
+        print(f"MANU ({current_model}): ", end="", flush=True)
 
-except requests.exceptions.RequestException as e:
-    print("\nConnection error:", e)
+        for line in response.iter_lines():
+            if not line:
+                continue
 
-except json.JSONDecodeError as e:
-    print("\nJSON error:", e)
+            chunk = json.loads(line)
+
+            if chunk.get("done"):
+                final_stats = chunk
+                break
+
+            content = chunk.get("message", {}).get("content", "")
+
+            if content:
+                print(content, end="", flush=True)
+                assistant_response += content
+
+        print()
+
+        # Save assistant response
+        messages.append({
+            "role": "assistant",
+            "content": assistant_response
+        })
+
+        # Performance information
+        if final_stats:
+            total = final_stats.get("total_duration", 0) / 1_000_000_000
+            load = final_stats.get("load_duration", 0) / 1_000_000_000
+            prompt = final_stats.get("prompt_eval_duration", 0) / 1_000_000_000
+            generation = final_stats.get("eval_duration", 0) / 1_000_000_000
+            tokens = final_stats.get("eval_count", 0)
+
+            print(
+                f"[Total: {total:.2f}s | "
+                f"Load: {load:.2f}s | "
+                f"Prompt: {prompt:.2f}s | "
+                f"Generation: {generation:.2f}s | "
+                f"Tokens: {tokens}]"
+            )
+
+        print()
+
+    except requests.exceptions.RequestException as e:
+        print("\nMANU: Could not connect to Ollama.")
+        print(f"Error: {e}")
+        print()
+
+        # Remove failed user message
+        messages.pop()
+
+    except json.JSONDecodeError:
+        print("\nMANU: Could not understand Ollama's response.")
+        print()
+
+        messages.pop()
