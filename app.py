@@ -3,7 +3,12 @@ import json
 import os
 
 from tools.tool_router import route_tool, get_tool_instructions
+from tools.planner import validate_plan
 
+
+# ==========================================
+# CONFIGURATION
+# ==========================================
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
 
@@ -22,185 +27,377 @@ thinking_enabled = False
 
 def load_memory():
 
-    if os.path.exists(MEMORY_FILE):
+    if not os.path.exists(MEMORY_FILE):
+        return []
 
-        try:
+    try:
 
-            with open(
-                MEMORY_FILE,
-                "r",
-                encoding="utf-8"
-            ) as file:
+        with open(
+            MEMORY_FILE,
+            "r",
+            encoding="utf-8"
+        ) as file:
 
-                return json.load(file)
+            return json.load(file)
 
-        except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError):
 
-            return []
-
-    return []
+        return []
 
 
 def save_memory(memory):
 
-    with open(
-        MEMORY_FILE,
-        "w",
-        encoding="utf-8"
-    ) as file:
+    try:
 
-        json.dump(
-            memory,
-            file,
-            indent=2,
-            ensure_ascii=False
+        with open(
+            MEMORY_FILE,
+            "w",
+            encoding="utf-8"
+        ) as file:
+
+            json.dump(
+                memory,
+                file,
+                indent=2,
+                ensure_ascii=False
+            )
+
+    except OSError as e:
+
+        print(
+            f"MANU: Could not save memory: {e}"
         )
 
 
 # ==========================================
-# SYSTEM
+# SYSTEM MESSAGE
 # ==========================================
 
 system_message = {
     "role": "system",
     "content": (
         "You are MANU, a local personal AI assistant. "
-        "Be clear and concise. "
+        "Be clear, direct and useful. "
+        "Be concise for simple questions. "
         "Do not repeat the user's question. "
-        "Do not use LaTeX. "
-        "Do not use dollar signs for mathematics. "
-        "Use normal text formatting."
+        "Do not use LaTeX or dollar signs for mathematics."
     )
 }
 
 
 # ==========================================
-# TOOL DECISION
+# CLEAN JSON RESPONSE
 # ==========================================
 
-def ask_for_tool(user_message):
+def clean_json(text):
 
-    messages = [
-        {
-            "role": "system",
-            "content": get_tool_instructions()
-        },
-        {
-            "role": "user",
-            "content": user_message
-        }
-    ]
+    text = text.strip()
 
-    data = {
-        "model": current_model,
-        "messages": messages,
-        "think": False,
-        "stream": False
-    }
+    if text.startswith("```"):
 
-    try:
+        lines = text.splitlines()
 
-        response = requests.post(
-            OLLAMA_URL,
-            json=data,
-            timeout=120
-        )
+        if lines:
 
-        response.raise_for_status()
+            lines = lines[1:]
 
-        result = response.json()
+        if lines and lines[-1].strip() == "```":
 
-        content = (
-            result
-            .get("message", {})
-            .get("content", "")
-            .strip()
-        )
+            lines = lines[:-1]
 
-        if content.startswith("```"):
+        text = "\n".join(lines).strip()
 
-            content = content.replace(
-                "```json",
-                ""
-            )
-
-            content = content.replace(
-                "```",
-                ""
-            )
-
-            content = content.strip()
-
-        decision = json.loads(content)
-
-        tool_name = decision.get(
-            "tool",
-            "none"
-        )
-
-        arguments = decision.get(
-            "arguments",
-            {}
-        )
-
-        allowed_tools = {
-            "calculator",
-            "system_info",
-            "list_files",
-            "read_file",
-            "write_file",
-            "none"
-        }
-
-        if tool_name not in allowed_tools:
-
-            return {
-                "tool": "none",
-                "arguments": {}
-            }
-
-        if not isinstance(arguments, dict):
-
-            arguments = {}
-
-        return {
-            "tool": tool_name,
-            "arguments": arguments
-        }
-
-    except Exception:
-
-        return {
-            "tool": "none",
-            "arguments": {}
-        }
+    return text
 
 
 # ==========================================
-# NORMAL AI RESPONSE
+# ASK QWEN
 # ==========================================
 
-def ask_model(messages):
+def ask_ollama(messages, stream=False):
 
     data = {
         "model": current_model,
         "messages": messages,
         "think": thinking_enabled,
-        "stream": True
+        "stream": stream
     }
-
-    assistant_response = ""
-
-    final_stats = None
 
     response = requests.post(
         OLLAMA_URL,
         json=data,
-        stream=True,
+        stream=stream,
         timeout=300
     )
 
     response.raise_for_status()
+
+    if not stream:
+
+        return response.json()
+
+    return response
+
+
+# ==========================================
+# CREATE PLAN
+# ==========================================
+
+def create_plan(user_request):
+
+    planner_prompt = """
+You are MANU's planning engine.
+
+Convert the user's request into a JSON execution plan.
+
+Available tools:
+
+calculator
+system_info
+list_files
+read_file
+write_file
+
+Rules:
+
+1. Return ONLY valid JSON.
+2. Do not use Markdown.
+3. Use multiple steps when necessary.
+4. Use the minimum number of steps needed.
+5. Never invent tools.
+6. Never delete files.
+7. Never execute shell commands.
+8. write_file requires explicit user intent to create/write a file.
+9. Normal conversation should return an empty steps list.
+
+Required format:
+
+{
+    "goal": "short description",
+    "steps": [
+        {
+            "tool": "tool_name",
+            "arguments": {}
+        }
+    ]
+}
+
+Examples:
+
+User:
+"Create hello.txt containing Hello MANU"
+
+Response:
+{
+    "goal": "Create hello.txt",
+    "steps": [
+        {
+            "tool": "write_file",
+            "arguments": {
+                "filename": "hello.txt",
+                "content": "Hello MANU"
+            }
+        }
+    ]
+}
+
+User:
+"Create note.txt with MANU V0.7 and then read it"
+
+Response:
+{
+    "goal": "Create and verify note.txt",
+    "steps": [
+        {
+            "tool": "write_file",
+            "arguments": {
+                "filename": "note.txt",
+                "content": "MANU V0.7"
+            }
+        },
+        {
+            "tool": "read_file",
+            "arguments": {
+                "filename": "note.txt"
+            }
+        }
+    ]
+}
+
+User:
+"What is Python?"
+
+Response:
+{
+    "goal": "Answer the question",
+    "steps": []
+}
+"""
+
+    messages = [
+        {
+            "role": "system",
+            "content": planner_prompt
+        },
+        {
+            "role": "user",
+            "content": user_request
+        }
+    ]
+
+    try:
+
+        data = ask_ollama(
+            messages,
+            stream=False
+        )
+
+        content = (
+            data
+            .get("message", {})
+            .get("content", "")
+        )
+
+        content = clean_json(content)
+
+        plan = json.loads(content)
+
+        if not validate_plan(plan):
+
+            return {
+                "goal": user_request,
+                "steps": []
+            }
+
+        return plan
+
+    except (
+        requests.exceptions.RequestException,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError
+    ):
+
+        return {
+            "goal": user_request,
+            "steps": []
+        }
+
+
+# ==========================================
+# EXECUTE PLAN
+# ==========================================
+
+def execute_plan(plan):
+
+    results = []
+
+    steps = plan.get(
+        "steps",
+        []
+    )
+
+    for number, step in enumerate(
+        steps,
+        start=1
+    ):
+
+        tool_name = step.get(
+            "tool"
+        )
+
+        arguments = step.get(
+            "arguments",
+            {}
+        )
+
+        print(
+            f"MANU: Step {number}/{len(steps)} "
+            f"→ {tool_name}"
+        )
+
+        result = route_tool(
+            tool_name,
+            arguments
+        )
+
+        results.append(
+            {
+                "step": number,
+                "tool": tool_name,
+                "result": result
+            }
+        )
+
+        if isinstance(result, dict):
+
+            if "error" in result:
+
+                print(
+                    f"MANU: Step {number} failed."
+                )
+
+                break
+
+    return results
+
+
+# ==========================================
+# FINAL RESPONSE
+# ==========================================
+
+def generate_final_response(
+    user_request,
+    plan,
+    results
+):
+
+    tool_results = json.dumps(
+        results,
+        indent=2,
+        ensure_ascii=False
+    )
+
+    prompt = f"""
+You are MANU.
+
+The user asked:
+
+{user_request}
+
+The execution plan was:
+
+{json.dumps(plan, indent=2, ensure_ascii=False)}
+
+The tool results were:
+
+{tool_results}
+
+Give the user a clear final answer.
+
+Rules:
+- Do not mention internal architecture.
+- Do not mention Qwen.
+- Do not mention JSON.
+- Do not repeat the user's request.
+- Be concise.
+"""
+
+    messages = [
+        system_message,
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ]
+
+    response = ask_ollama(
+        messages,
+        stream=True
+    )
+
+    assistant_response = ""
+    final_stats = None
 
     print(
         f"MANU ({current_model}): ",
@@ -213,12 +410,17 @@ def ask_model(messages):
         if not line:
             continue
 
-        chunk = json.loads(line)
+        try:
+
+            chunk = json.loads(line)
+
+        except json.JSONDecodeError:
+
+            continue
 
         if chunk.get("done"):
 
             final_stats = chunk
-
             break
 
         content = (
@@ -243,6 +445,101 @@ def ask_model(messages):
 
 
 # ==========================================
+# NORMAL CHAT
+# ==========================================
+
+def normal_response(user_message):
+
+    global messages
+
+    messages.append(
+        {
+            "role": "user",
+            "content": user_message
+        }
+    )
+
+    try:
+
+        response = ask_ollama(
+            messages,
+            stream=True
+        )
+
+        assistant_response = ""
+        final_stats = None
+
+        print(
+            f"MANU ({current_model}): ",
+            end="",
+            flush=True
+        )
+
+        for line in response.iter_lines():
+
+            if not line:
+                continue
+
+            try:
+
+                chunk = json.loads(line)
+
+            except json.JSONDecodeError:
+
+                continue
+
+            if chunk.get("done"):
+
+                final_stats = chunk
+                break
+
+            content = (
+                chunk
+                .get("message", {})
+                .get("content", "")
+            )
+
+            if content:
+
+                print(
+                    content,
+                    end="",
+                    flush=True
+                )
+
+                assistant_response += content
+
+        print()
+
+        messages.append(
+            {
+                "role": "assistant",
+                "content": assistant_response
+            }
+        )
+
+        save_memory(
+            messages[1:]
+        )
+
+        return final_stats
+
+    except requests.exceptions.RequestException as e:
+
+        print(
+            "MANU: Could not connect to Ollama."
+        )
+
+        print(
+            f"Error: {e}"
+        )
+
+        messages.pop()
+
+        return None
+
+
+# ==========================================
 # PERFORMANCE
 # ==========================================
 
@@ -251,15 +548,19 @@ def show_stats(stats):
     if not stats:
         return
 
-    total = stats.get(
-        "total_duration",
-        0
-    ) / 1_000_000_000
+    total = (
+        stats.get(
+            "total_duration",
+            0
+        ) / 1_000_000_000
+    )
 
-    generation = stats.get(
-        "eval_duration",
-        0
-    ) / 1_000_000_000
+    generation = (
+        stats.get(
+            "eval_duration",
+            0
+        ) / 1_000_000_000
+    )
 
     tokens = stats.get(
         "eval_count",
@@ -274,18 +575,22 @@ def show_stats(stats):
 
 
 # ==========================================
-# START
+# START MANU
 # ==========================================
 
 memory = load_memory()
 
-messages = [system_message]
+messages = [
+    system_message
+]
 
-messages.extend(memory)
+messages.extend(
+    memory
+)
 
 
 print("================================")
-print("          MANU V0.6")
+print("          MANU V0.7")
 print("     Local Personal AI Agent")
 print("================================")
 
@@ -306,6 +611,9 @@ print("- write_file")
 
 print()
 
+print("Planner: ENABLED")
+print()
+
 
 # ==========================================
 # MAIN LOOP
@@ -313,7 +621,9 @@ print()
 
 while True:
 
-    message = input("You: ").strip()
+    message = input(
+        "You: "
+    ).strip()
 
     if not message:
         continue
@@ -325,7 +635,9 @@ while True:
 
     if message.lower() == "/exit":
 
-        save_memory(messages[1:])
+        save_memory(
+            messages[1:]
+        )
 
         print(
             "MANU: Goodbye!"
@@ -394,151 +706,36 @@ while True:
 
 
     # --------------------------------------
-    # TOOL SELECTION
+    # CREATE PLAN
     # --------------------------------------
 
-    decision = ask_for_tool(
+    print(
+        "MANU: Planning..."
+    )
+
+    plan = create_plan(
         message
     )
 
-    tool_name = decision["tool"]
-
-    arguments = decision["arguments"]
+    steps = plan.get(
+        "steps",
+        []
+    )
 
 
     # --------------------------------------
-    # TOOL EXECUTION
+    # NO TOOL REQUIRED
     # --------------------------------------
 
-    if tool_name != "none":
+    if not steps:
 
-        print(
-            f"MANU: Using {tool_name}..."
+        stats = normal_response(
+            message
         )
 
-        result = route_tool(
-            tool_name,
-            arguments
+        show_stats(
+            stats
         )
-
-
-        # ==================================
-        # CALCULATOR
-        # ==================================
-
-        if tool_name == "calculator":
-
-            if "result" in result:
-
-                expression = result.get(
-                    "expression",
-                    ""
-                )
-
-                answer = result.get(
-                    "result"
-                )
-
-                output = (
-                    f"{expression} = {answer}"
-                )
-
-                print(
-                    f"MANU: {output}"
-                )
-
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": message
-                    }
-                )
-
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": output
-                    }
-                )
-
-                save_memory(
-                    messages[1:]
-                )
-
-            else:
-
-                print(
-                    "MANU:",
-                    result.get(
-                        "error",
-                        "Calculator error."
-                    )
-                )
-
-            print()
-
-            continue
-
-
-        # ==================================
-        # OTHER TOOLS
-        # ==================================
-
-        messages.append(
-            {
-                "role": "user",
-                "content": message
-            }
-        )
-
-        messages.append(
-            {
-                "role": "system",
-                "content": (
-                    "Tool result:\n"
-                    + json.dumps(
-                        result,
-                        ensure_ascii=False
-                    )
-                    + "\n\n"
-                    "Answer the user's request using "
-                    "the tool result. "
-                    "Do not mention internal tool mechanics."
-                )
-            }
-        )
-
-        try:
-
-            answer, stats = ask_model(
-                messages
-            )
-
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": answer
-                }
-            )
-
-            save_memory(
-                messages[1:]
-            )
-
-            show_stats(stats)
-
-        except requests.exceptions.RequestException as e:
-
-            print(
-                "MANU: Could not connect to Ollama."
-            )
-
-            print(
-                f"Error: {e}"
-            )
-
-            messages.pop()
-            messages.pop()
 
         print()
 
@@ -546,20 +743,39 @@ while True:
 
 
     # --------------------------------------
-    # NORMAL CHAT
+    # SHOW PLAN
     # --------------------------------------
 
-    messages.append(
-        {
-            "role": "user",
-            "content": message
-        }
+    print(
+        f"MANU: Plan created "
+        f"({len(steps)} step"
+        f"{'' if len(steps) == 1 else 's'})."
     )
+
+
+    # --------------------------------------
+    # EXECUTE
+    # --------------------------------------
 
     try:
 
-        answer, stats = ask_model(
-            messages
+        results = execute_plan(
+            plan
+        )
+
+        answer, stats = generate_final_response(
+            message,
+            plan,
+            results
+        )
+
+        # Save compact conversation memory
+
+        messages.append(
+            {
+                "role": "user",
+                "content": message
+            }
         )
 
         messages.append(
@@ -573,7 +789,9 @@ while True:
             messages[1:]
         )
 
-        show_stats(stats)
+        show_stats(
+            stats
+        )
 
     except requests.exceptions.RequestException as e:
 
@@ -585,6 +803,10 @@ while True:
             f"Error: {e}"
         )
 
-        messages.pop()
+    except Exception as e:
+
+        print(
+            f"MANU: Task execution error: {e}"
+        )
 
     print()
