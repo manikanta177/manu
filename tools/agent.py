@@ -2,7 +2,7 @@
 # MANU V0.9 AGENT LOOP + SAFETY
 # ==========================================
 
-from safety import validate_tool_call
+from tools.safety import validate_tool_call
 
 
 MAX_STEPS = 5
