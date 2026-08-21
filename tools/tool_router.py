@@ -1,7 +1,19 @@
-from tools.calculator import calculate
-from tools.system import get_system_info
-from tools.files import list_files
-from tools.file_actions import read_file, write_file
+try:
+    from tools.calculator import calculate
+    from tools.system import get_system_info
+    from tools.files import list_files
+    from tools.file_actions import (
+        read_file,
+        write_file
+    )
+except ModuleNotFoundError:
+    from calculator import calculate
+    from system import get_system_info
+    from files import list_files
+    from file_actions import (
+        read_file,
+        write_file
+    )
 
 
 # ==========================================
