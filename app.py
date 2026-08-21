@@ -2,8 +2,9 @@ import requests
 import json
 import os
 
-from tools.tool_router import route_tool, get_tool_instructions
+from tools.tool_router import route_tool
 from tools.planner import validate_plan
+from tools.agent import execute_agent_plan
 
 
 # ==========================================
@@ -86,32 +87,7 @@ system_message = {
 
 
 # ==========================================
-# CLEAN JSON RESPONSE
-# ==========================================
-
-def clean_json(text):
-
-    text = text.strip()
-
-    if text.startswith("```"):
-
-        lines = text.splitlines()
-
-        if lines:
-
-            lines = lines[1:]
-
-        if lines and lines[-1].strip() == "```":
-
-            lines = lines[:-1]
-
-        text = "\n".join(lines).strip()
-
-    return text
-
-
-# ==========================================
-# ASK QWEN
+# ASK OLLAMA
 # ==========================================
 
 def ask_ollama(messages, stream=False):
@@ -133,10 +109,32 @@ def ask_ollama(messages, stream=False):
     response.raise_for_status()
 
     if not stream:
-
         return response.json()
 
     return response
+
+
+# ==========================================
+# CLEAN JSON
+# ==========================================
+
+def clean_json(text):
+
+    text = text.strip()
+
+    if text.startswith("```"):
+
+        lines = text.splitlines()
+
+        if lines:
+            lines = lines[1:]
+
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+
+        text = "\n".join(lines).strip()
+
+    return text
 
 
 # ==========================================
@@ -167,8 +165,9 @@ Rules:
 5. Never invent tools.
 6. Never delete files.
 7. Never execute shell commands.
-8. write_file requires explicit user intent to create/write a file.
-9. Normal conversation should return an empty steps list.
+8. Never execute programs.
+9. write_file requires explicit user intent.
+10. Normal conversation must return an empty steps list.
 
 Required format:
 
@@ -182,12 +181,13 @@ Required format:
     ]
 }
 
-Examples:
+Example:
 
 User:
-"Create hello.txt containing Hello MANU"
+Create hello.txt containing Hello MANU
 
 Response:
+
 {
     "goal": "Create hello.txt",
     "steps": [
@@ -201,10 +201,13 @@ Response:
     ]
 }
 
+Example:
+
 User:
-"Create note.txt with MANU V0.7 and then read it"
+Create note.txt with MANU V0.8 and then read it
 
 Response:
+
 {
     "goal": "Create and verify note.txt",
     "steps": [
@@ -212,7 +215,7 @@ Response:
             "tool": "write_file",
             "arguments": {
                 "filename": "note.txt",
-                "content": "MANU V0.7"
+                "content": "MANU V0.8"
             }
         },
         {
@@ -224,10 +227,13 @@ Response:
     ]
 }
 
+Example:
+
 User:
-"What is Python?"
+What is Python?
 
 Response:
+
 {
     "goal": "Answer the question",
     "steps": []
@@ -285,70 +291,11 @@ Response:
 
 
 # ==========================================
-# EXECUTE PLAN
-# ==========================================
-
-def execute_plan(plan):
-
-    results = []
-
-    steps = plan.get(
-        "steps",
-        []
-    )
-
-    for number, step in enumerate(
-        steps,
-        start=1
-    ):
-
-        tool_name = step.get(
-            "tool"
-        )
-
-        arguments = step.get(
-            "arguments",
-            {}
-        )
-
-        print(
-            f"MANU: Step {number}/{len(steps)} "
-            f"→ {tool_name}"
-        )
-
-        result = route_tool(
-            tool_name,
-            arguments
-        )
-
-        results.append(
-            {
-                "step": number,
-                "tool": tool_name,
-                "result": result
-            }
-        )
-
-        if isinstance(result, dict):
-
-            if "error" in result:
-
-                print(
-                    f"MANU: Step {number} failed."
-                )
-
-                break
-
-    return results
-
-
-# ==========================================
 # FINAL RESPONSE
 # ==========================================
 
 def generate_final_response(
     user_request,
-    plan,
     results
 ):
 
@@ -365,22 +312,22 @@ The user asked:
 
 {user_request}
 
-The execution plan was:
+The tools were executed.
 
-{json.dumps(plan, indent=2, ensure_ascii=False)}
-
-The tool results were:
+Results:
 
 {tool_results}
 
 Give the user a clear final answer.
 
 Rules:
+
 - Do not mention internal architecture.
 - Do not mention Qwen.
 - Do not mention JSON.
-- Do not repeat the user's request.
+- Do not repeat the request.
 - Be concise.
+- Do not use dollar signs for mathematics.
 """
 
     messages = [
@@ -590,7 +537,7 @@ messages.extend(
 
 
 print("================================")
-print("          MANU V0.7")
+print("          MANU V0.8")
 print("     Local Personal AI Agent")
 print("================================")
 
@@ -611,7 +558,8 @@ print("- write_file")
 
 print()
 
-print("Planner: ENABLED")
+print("Agent Loop: ENABLED")
+
 print()
 
 
@@ -629,9 +577,9 @@ while True:
         continue
 
 
-    # --------------------------------------
+    # ======================================
     # EXIT
-    # --------------------------------------
+    # ======================================
 
     if message.lower() == "/exit":
 
@@ -646,9 +594,9 @@ while True:
         break
 
 
-    # --------------------------------------
+    # ======================================
     # CLEAR
-    # --------------------------------------
+    # ======================================
 
     if message.lower() == "/clear":
 
@@ -667,9 +615,9 @@ while True:
         continue
 
 
-    # --------------------------------------
+    # ======================================
     # THINK
-    # --------------------------------------
+    # ======================================
 
     if message.lower() == "/think":
 
@@ -686,9 +634,9 @@ while True:
         continue
 
 
-    # --------------------------------------
+    # ======================================
     # FAST
-    # --------------------------------------
+    # ======================================
 
     if message.lower() == "/fast":
 
@@ -705,9 +653,9 @@ while True:
         continue
 
 
-    # --------------------------------------
-    # CREATE PLAN
-    # --------------------------------------
+    # ======================================
+    # PLAN
+    # ======================================
 
     print(
         "MANU: Planning..."
@@ -723,9 +671,9 @@ while True:
     )
 
 
-    # --------------------------------------
-    # NO TOOL REQUIRED
-    # --------------------------------------
+    # ======================================
+    # NORMAL CHAT
+    # ======================================
 
     if not steps:
 
@@ -742,34 +690,27 @@ while True:
         continue
 
 
-    # --------------------------------------
-    # SHOW PLAN
-    # --------------------------------------
+    # ======================================
+    # AGENT EXECUTION
+    # ======================================
 
     print(
-        f"MANU: Plan created "
+        f"MANU: Agent plan created "
         f"({len(steps)} step"
         f"{'' if len(steps) == 1 else 's'})."
     )
 
-
-    # --------------------------------------
-    # EXECUTE
-    # --------------------------------------
-
     try:
 
-        results = execute_plan(
-            plan
+        results = execute_agent_plan(
+            plan,
+            route_tool
         )
 
         answer, stats = generate_final_response(
             message,
-            plan,
             results
         )
-
-        # Save compact conversation memory
 
         messages.append(
             {
@@ -806,7 +747,7 @@ while True:
     except Exception as e:
 
         print(
-            f"MANU: Task execution error: {e}"
+            f"MANU: Agent error: {e}"
         )
 
     print()
