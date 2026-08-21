@@ -33,5 +33,10 @@
     "id": 7,
     "title": "Test MANU V1 task",
     "completed": false
+  },
+  {
+    "id": 8,
+    "title": "Test V1.1",
+    "completed": false
   }
 ]
