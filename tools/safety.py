@@ -9,6 +9,10 @@ ALLOWED_TOOLS = {
     "list_files",
     "read_file",
     "write_file",
+    "add_task",
+    "list_tasks",
+    "complete_task",
+    "delete_task",
 }
 
 

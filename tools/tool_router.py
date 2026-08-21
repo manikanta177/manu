@@ -1,198 +1,25 @@
-try:
-    from tools.calculator import calculate
-    from tools.system import get_system_info
-    from tools.files import list_files
-    from tools.file_actions import (
-        read_file,
-        write_file
-    )
-except ModuleNotFoundError:
-    from calculator import calculate
-    from system import get_system_info
-    from files import list_files
-    from file_actions import (
-        read_file,
-        write_file
-    )
-
-
 # ==========================================
-# AVAILABLE TOOLS
+# MANU V1.0 TOOL ROUTER
 # ==========================================
 
-AVAILABLE_TOOLS = [
-    "calculator",
-    "system_info",
-    "list_files",
-    "read_file",
-    "write_file",
-    "none"
-]
+from tools.calculator import calculate
+from tools.system import get_system_info
+from tools.files import list_files
+from tools.file_actions import read_file, write_file
 
-
-# ==========================================
-# TOOL INSTRUCTIONS FOR QWEN
-# ==========================================
-
-def get_tool_instructions():
-
-    return """
-You are MANU's tool selection system.
-
-Your job is to decide whether the user's request requires a tool.
-
-You MUST return ONLY valid JSON.
-
-Available tools:
-
-1. calculator
-Use for mathematical calculations.
-
-Arguments:
-{
-    "expression": "25 * 25"
-}
-
-2. system_info
-Use for information about the computer's operating system,
-CPU, architecture, processor, or basic system information.
-
-Arguments:
-{}
-
-3. list_files
-Use when the user wants to see files or folders.
-
-Arguments:
-{
-    "folder": "."
-}
-
-4. read_file
-Use when the user asks MANU to read a text file.
-
-Arguments:
-{
-    "filename": "README.md"
-}
-
-5. write_file
-Use when the user asks MANU to create or write a text file.
-
-Arguments:
-{
-    "filename": "notes.txt",
-    "content": "Hello from MANU"
-}
-
-6. none
-Use for normal conversation, explanations, coding questions,
-general questions, greetings, and anything that does not require
-a tool.
-
-Arguments:
-{}
-
-IMPORTANT SAFETY RULES:
-
-- Never invent a tool.
-- Never request shell commands.
-- Never request Python execution.
-- Never delete files.
-- Never modify files unless the user explicitly requests
-  write_file.
-- read_file and write_file are restricted to the MANU project.
-- Return ONLY JSON.
-- Do not use Markdown.
-- Do not include explanations outside the JSON.
-
-Examples:
-
-User:
-"Calculate 25 times 25"
-
-Return:
-{
-    "tool": "calculator",
-    "arguments": {
-        "expression": "25 * 25"
-    }
-}
-
-User:
-"What operating system am I using?"
-
-Return:
-{
-    "tool": "system_info",
-    "arguments": {}
-}
-
-User:
-"Show me the files in the tools folder"
-
-Return:
-{
-    "tool": "list_files",
-    "arguments": {
-        "folder": "tools"
-    }
-}
-
-User:
-"Read README.md"
-
-Return:
-{
-    "tool": "read_file",
-    "arguments": {
-        "filename": "README.md"
-    }
-}
-
-User:
-"Create a file called hello.txt containing Hello MANU"
-
-Return:
-{
-    "tool": "write_file",
-    "arguments": {
-        "filename": "hello.txt",
-        "content": "Hello MANU"
-    }
-}
-
-User:
-"Hello MANU"
-
-Return:
-{
-    "tool": "none",
-    "arguments": {}
-}
-"""
+from tools.task_manager import (
+    add_task,
+    list_tasks,
+    complete_task,
+    delete_task
+)
 
 
 # ==========================================
 # TOOL ROUTER
 # ==========================================
 
-def route_tool(tool_name, arguments=None):
-
-    if arguments is None:
-        arguments = {}
-
-
-    # --------------------------------------
-    # SECURITY: ALLOWLIST
-    # --------------------------------------
-
-    if tool_name not in AVAILABLE_TOOLS:
-
-        return {
-            "error": f"Unknown tool: {tool_name}"
-        }
-
+def route_tool(tool_name, arguments):
 
     # --------------------------------------
     # CALCULATOR
@@ -200,18 +27,9 @@ def route_tool(tool_name, arguments=None):
 
     if tool_name == "calculator":
 
-        expression = arguments.get(
-            "expression",
-            ""
+        return calculate(
+            arguments.get("expression", "")
         )
-
-        if not expression:
-
-            return {
-                "error": "No expression provided."
-            }
-
-        return calculate(expression)
 
 
     # --------------------------------------
@@ -224,17 +42,12 @@ def route_tool(tool_name, arguments=None):
 
 
     # --------------------------------------
-    # FILE LIST
+    # LIST FILES
     # --------------------------------------
 
     if tool_name == "list_files":
 
-        folder = arguments.get(
-            "folder",
-            "."
-        )
-
-        return list_files(folder)
+        return list_files()
 
 
     # --------------------------------------
@@ -243,18 +56,9 @@ def route_tool(tool_name, arguments=None):
 
     if tool_name == "read_file":
 
-        filename = arguments.get(
-            "filename",
-            ""
+        return read_file(
+            arguments.get("filename", "")
         )
-
-        if not filename:
-
-            return {
-                "error": "No filename provided."
-            }
-
-        return read_file(filename)
 
 
     # --------------------------------------
@@ -263,100 +67,138 @@ def route_tool(tool_name, arguments=None):
 
     if tool_name == "write_file":
 
-        filename = arguments.get(
-            "filename",
-            ""
-        )
-
-        content = arguments.get(
-            "content",
-            ""
-        )
-
-        if not filename:
-
-            return {
-                "error": "No filename provided."
-            }
-
         return write_file(
-            filename,
-            content
+            arguments.get("filename", ""),
+            arguments.get("content", "")
         )
 
 
     # --------------------------------------
-    # NONE
+    # ADD TASK
     # --------------------------------------
 
-    if tool_name == "none":
+    if tool_name == "add_task":
 
-        return {
-            "status": "No tool required."
-        }
+        return add_task(
+            arguments.get("title", "")
+        )
 
 
     # --------------------------------------
-    # FALLBACK
+    # LIST TASKS
+    # --------------------------------------
+
+    if tool_name == "list_tasks":
+
+        return list_tasks()
+
+
+    # --------------------------------------
+    # COMPLETE TASK
+    # --------------------------------------
+
+    if tool_name == "complete_task":
+
+        task_id = arguments.get("task_id")
+
+        return complete_task(
+            int(task_id)
+        )
+
+
+    # --------------------------------------
+    # DELETE TASK
+    # --------------------------------------
+
+    if tool_name == "delete_task":
+
+        task_id = arguments.get("task_id")
+
+        return delete_task(
+            int(task_id)
+        )
+
+
+    # --------------------------------------
+    # UNKNOWN TOOL
     # --------------------------------------
 
     return {
-        "error": "Tool could not be executed."
+        "error": f"Unknown tool: {tool_name}"
     }
 
 
 # ==========================================
-# DIRECT TEST
+# AVAILABLE TOOLS
+# ==========================================
+
+AVAILABLE_TOOLS = [
+
+    "calculator",
+    "system_info",
+    "list_files",
+    "read_file",
+    "write_file",
+
+    "add_task",
+    "list_tasks",
+    "complete_task",
+    "delete_task"
+
+]
+
+
+# ==========================================
+# TEST
 # ==========================================
 
 if __name__ == "__main__":
 
-    print("MANU Tool Router")
-    print("=================")
+    print("MANU Tool Router V1.0")
+    print("=====================")
 
-    print("\nAvailable tools:")
+    print()
+    print("Available tools:")
 
     for tool in AVAILABLE_TOOLS:
-        print("-", tool)
 
-    print("\nCalculator test:")
+        print(
+            f"- {tool}"
+        )
+
+
+    print()
+    print("Testing calculator...")
 
     print(
         route_tool(
             "calculator",
             {
-                "expression": "25 * 40"
+                "expression": "25 * 25"
             }
         )
     )
 
-    print("\nSystem test:")
+
+    print()
+    print("Testing add_task...")
 
     print(
         route_tool(
-            "system_info",
+            "add_task",
+            {
+                "title": "Test MANU V1 task"
+            }
+        )
+    )
+
+
+    print()
+    print("Testing list_tasks...")
+
+    print(
+        route_tool(
+            "list_tasks",
             {}
-        )
-    )
-
-    print("\nFile list test:")
-
-    print(
-        route_tool(
-            "list_files",
-            {
-                "folder": "."
-            }
-        )
-    )
-
-    print("\nRead file test:")
-
-    print(
-        route_tool(
-            "read_file",
-            {
-                "filename": "manu_test.txt"
-            }
         )
     )
