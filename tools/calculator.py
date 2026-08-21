@@ -1,27 +1,122 @@
-def calculate(a, b, operation):
-    if operation == "add":
-        return a + b
+import ast
+import operator
 
-    elif operation == "subtract":
-        return a - b
 
-    elif operation == "multiply":
-        return a * b
+def calculate(expression):
 
-    elif operation == "divide":
-        if b == 0:
-            return "Cannot divide by zero."
-        return a / b
+    try:
 
-    else:
-        return "Unknown operation."
+        tree = ast.parse(
+            expression,
+            mode="eval"
+        )
+
+        allowed_operators = {
+            ast.Add: operator.add,
+            ast.Sub: operator.sub,
+            ast.Mult: operator.mul,
+            ast.Div: operator.truediv,
+            ast.FloorDiv: operator.floordiv,
+            ast.Mod: operator.mod,
+            ast.Pow: operator.pow
+        }
+
+        def evaluate(node):
+
+            if isinstance(node, ast.Expression):
+                return evaluate(node.body)
+
+            if isinstance(node, ast.Constant):
+
+                if isinstance(node.value, (int, float)):
+                    return node.value
+
+                raise ValueError(
+                    "Only numbers are allowed."
+                )
+
+            if isinstance(node, ast.UnaryOp):
+
+                value = evaluate(node.operand)
+
+                if isinstance(node.op, ast.USub):
+                    return -value
+
+                if isinstance(node.op, ast.UAdd):
+                    return value
+
+                raise ValueError(
+                    "Unsupported operation."
+                )
+
+            if isinstance(node, ast.BinOp):
+
+                left = evaluate(node.left)
+                right = evaluate(node.right)
+
+                operation = allowed_operators.get(
+                    type(node.op)
+                )
+
+                if operation is None:
+                    raise ValueError(
+                        "Unsupported operation."
+                    )
+
+                if (
+                    isinstance(node.op, ast.Div)
+                    and right == 0
+                ):
+                    raise ValueError(
+                        "Cannot divide by zero."
+                    )
+
+                return operation(
+                    left,
+                    right
+                )
+
+            raise ValueError(
+                "Invalid expression."
+            )
+
+        result = evaluate(tree)
+
+        # Convert 625.0 → 625
+        if isinstance(result, float) and result.is_integer():
+            result = int(result)
+
+        return {
+            "expression": expression,
+            "result": result
+        }
+
+    except Exception as e:
+
+        return {
+            "error": f"Calculator error: {e}"
+        }
 
 
 if __name__ == "__main__":
 
     print("MANU Calculator")
+    print("================")
 
-    print("10 + 5 =", calculate(10, 5, "add"))
-    print("10 - 5 =", calculate(10, 5, "subtract"))
-    print("10 × 5 =", calculate(10, 5, "multiply"))
-    print("10 ÷ 5 =", calculate(10, 5, "divide"))
+    tests = [
+        "10 + 5",
+        "10 - 5",
+        "10 * 5",
+        "10 / 5",
+        "25 * 25",
+        "100 / 4"
+    ]
+
+    for expression in tests:
+
+        result = calculate(expression)
+
+        print(
+            f"{expression} = "
+            f"{result}"
+        )

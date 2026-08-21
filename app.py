@@ -1,11 +1,8 @@
 import requests
 import json
 import os
-import ast
-import operator
 
-from tools.system import get_system_info
-from tools.files import list_files
+from tools.tool_router import route_tool, get_tool_instructions
 
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
@@ -19,71 +16,9 @@ current_model = FAST_MODEL
 thinking_enabled = False
 
 
-# ==============================
-# SAFE CALCULATOR
-# ==============================
-
-def calculate_expression(expression):
-    try:
-        tree = ast.parse(expression, mode="eval")
-
-        allowed_operators = {
-            ast.Add: operator.add,
-            ast.Sub: operator.sub,
-            ast.Mult: operator.mul,
-            ast.Div: operator.truediv,
-            ast.FloorDiv: operator.floordiv,
-            ast.Mod: operator.mod,
-            ast.Pow: operator.pow
-        }
-
-        def evaluate(node):
-
-            if isinstance(node, ast.Expression):
-                return evaluate(node.body)
-
-            if isinstance(node, ast.Constant):
-                if isinstance(node.value, (int, float)):
-                    return node.value
-                raise ValueError("Only numbers are allowed.")
-
-            if isinstance(node, ast.UnaryOp):
-                value = evaluate(node.operand)
-
-                if isinstance(node.op, ast.USub):
-                    return -value
-
-                if isinstance(node.op, ast.UAdd):
-                    return value
-
-                raise ValueError("Unsupported operation.")
-
-            if isinstance(node, ast.BinOp):
-
-                left = evaluate(node.left)
-                right = evaluate(node.right)
-
-                operation = allowed_operators.get(type(node.op))
-
-                if operation is None:
-                    raise ValueError("Unsupported operation.")
-
-                if isinstance(node.op, ast.Div) and right == 0:
-                    raise ValueError("Cannot divide by zero.")
-
-                return operation(left, right)
-
-            raise ValueError("Invalid expression.")
-
-        return evaluate(tree)
-
-    except Exception as e:
-        return f"Calculator error: {e}"
-
-
-# ==============================
-# MEMORY FUNCTIONS
-# ==============================
+# ==========================================
+# MEMORY
+# ==========================================
 
 def load_memory():
 
@@ -122,25 +57,225 @@ def save_memory(memory):
         )
 
 
-# ==============================
-# SYSTEM MESSAGE
-# ==============================
+# ==========================================
+# SYSTEM
+# ==========================================
 
 system_message = {
     "role": "system",
     "content": (
-        "You are MANU, a personal AI assistant. "
-        "Be concise for simple questions and detailed only when necessary. "
+        "You are MANU, a local personal AI assistant. "
+        "Be clear and concise. "
         "Do not repeat the user's question. "
-        "Avoid unnecessary introductions, excessive emojis, and long explanations. "
-        "Give clear, direct and useful answers."
+        "Do not use LaTeX. "
+        "Do not use dollar signs for mathematics. "
+        "Use normal text formatting."
     )
 }
 
 
-# ==============================
-# LOAD MEMORY
-# ==============================
+# ==========================================
+# TOOL DECISION
+# ==========================================
+
+def ask_for_tool(user_message):
+
+    messages = [
+        {
+            "role": "system",
+            "content": get_tool_instructions()
+        },
+        {
+            "role": "user",
+            "content": user_message
+        }
+    ]
+
+    data = {
+        "model": current_model,
+        "messages": messages,
+        "think": False,
+        "stream": False
+    }
+
+    try:
+
+        response = requests.post(
+            OLLAMA_URL,
+            json=data,
+            timeout=120
+        )
+
+        response.raise_for_status()
+
+        result = response.json()
+
+        content = (
+            result
+            .get("message", {})
+            .get("content", "")
+            .strip()
+        )
+
+        if content.startswith("```"):
+
+            content = content.replace(
+                "```json",
+                ""
+            )
+
+            content = content.replace(
+                "```",
+                ""
+            )
+
+            content = content.strip()
+
+        decision = json.loads(content)
+
+        tool_name = decision.get(
+            "tool",
+            "none"
+        )
+
+        arguments = decision.get(
+            "arguments",
+            {}
+        )
+
+        allowed_tools = {
+            "calculator",
+            "system_info",
+            "list_files",
+            "read_file",
+            "write_file",
+            "none"
+        }
+
+        if tool_name not in allowed_tools:
+
+            return {
+                "tool": "none",
+                "arguments": {}
+            }
+
+        if not isinstance(arguments, dict):
+
+            arguments = {}
+
+        return {
+            "tool": tool_name,
+            "arguments": arguments
+        }
+
+    except Exception:
+
+        return {
+            "tool": "none",
+            "arguments": {}
+        }
+
+
+# ==========================================
+# NORMAL AI RESPONSE
+# ==========================================
+
+def ask_model(messages):
+
+    data = {
+        "model": current_model,
+        "messages": messages,
+        "think": thinking_enabled,
+        "stream": True
+    }
+
+    assistant_response = ""
+
+    final_stats = None
+
+    response = requests.post(
+        OLLAMA_URL,
+        json=data,
+        stream=True,
+        timeout=300
+    )
+
+    response.raise_for_status()
+
+    print(
+        f"MANU ({current_model}): ",
+        end="",
+        flush=True
+    )
+
+    for line in response.iter_lines():
+
+        if not line:
+            continue
+
+        chunk = json.loads(line)
+
+        if chunk.get("done"):
+
+            final_stats = chunk
+
+            break
+
+        content = (
+            chunk
+            .get("message", {})
+            .get("content", "")
+        )
+
+        if content:
+
+            print(
+                content,
+                end="",
+                flush=True
+            )
+
+            assistant_response += content
+
+    print()
+
+    return assistant_response, final_stats
+
+
+# ==========================================
+# PERFORMANCE
+# ==========================================
+
+def show_stats(stats):
+
+    if not stats:
+        return
+
+    total = stats.get(
+        "total_duration",
+        0
+    ) / 1_000_000_000
+
+    generation = stats.get(
+        "eval_duration",
+        0
+    ) / 1_000_000_000
+
+    tokens = stats.get(
+        "eval_count",
+        0
+    )
+
+    print(
+        f"[Total: {total:.2f}s | "
+        f"Generation: {generation:.2f}s | "
+        f"Tokens: {tokens}]"
+    )
+
+
+# ==========================================
+# START
+# ==========================================
 
 memory = load_memory()
 
@@ -149,30 +284,32 @@ messages = [system_message]
 messages.extend(memory)
 
 
-# ==============================
-# DISPLAY
-# ==============================
-
 print("================================")
-print("          MANU V0.4")
+print("          MANU V0.6")
 print("     Local Personal AI Agent")
 print("================================")
 
 print("Commands:")
-print("/calc <expression> - calculator")
-print("/system            - system information")
-print("/files             - list MANU folder")
-print("/files <folder>    - list specific folder")
-print("/clear             - clear conversation")
-print("/think             - switch to deep reasoning mode")
-print("/fast              - switch to fast mode")
-print("/exit              - exit MANU")
+print("/clear  - clear conversation")
+print("/think  - deep reasoning")
+print("/fast   - fast mode")
+print("/exit   - exit MANU")
+
+print()
+
+print("Tools:")
+print("- calculator")
+print("- system_info")
+print("- list_files")
+print("- read_file")
+print("- write_file")
+
 print()
 
 
-# ==============================
+# ==========================================
 # MAIN LOOP
-# ==============================
+# ==========================================
 
 while True:
 
@@ -182,26 +319,30 @@ while True:
         continue
 
 
-    # ==============================
+    # --------------------------------------
     # EXIT
-    # ==============================
+    # --------------------------------------
 
     if message.lower() == "/exit":
 
         save_memory(messages[1:])
 
-        print("MANU: Goodbye!")
+        print(
+            "MANU: Goodbye!"
+        )
 
         break
 
 
-    # ==============================
-    # CLEAR MEMORY
-    # ==============================
+    # --------------------------------------
+    # CLEAR
+    # --------------------------------------
 
     if message.lower() == "/clear":
 
-        messages = [system_message]
+        messages = [
+            system_message
+        ]
 
         save_memory([])
 
@@ -214,9 +355,9 @@ while True:
         continue
 
 
-    # ==============================
-    # THINKING MODE
-    # ==============================
+    # --------------------------------------
+    # THINK
+    # --------------------------------------
 
     if message.lower() == "/think":
 
@@ -233,9 +374,9 @@ while True:
         continue
 
 
-    # ==============================
-    # FAST MODE
-    # ==============================
+    # --------------------------------------
+    # FAST
+    # --------------------------------------
 
     if message.lower() == "/fast":
 
@@ -252,287 +393,198 @@ while True:
         continue
 
 
-    # ==============================
-    # CALCULATOR TOOL
-    # ==============================
+    # --------------------------------------
+    # TOOL SELECTION
+    # --------------------------------------
 
-    if message.lower().startswith("/calc"):
+    decision = ask_for_tool(
+        message
+    )
 
-        expression = message[5:].strip()
+    tool_name = decision["tool"]
 
-        if not expression:
+    arguments = decision["arguments"]
 
-            print(
-                "MANU: Usage: /calc 25 * 40"
-            )
+
+    # --------------------------------------
+    # TOOL EXECUTION
+    # --------------------------------------
+
+    if tool_name != "none":
+
+        print(
+            f"MANU: Using {tool_name}..."
+        )
+
+        result = route_tool(
+            tool_name,
+            arguments
+        )
+
+
+        # ==================================
+        # CALCULATOR
+        # ==================================
+
+        if tool_name == "calculator":
+
+            if "result" in result:
+
+                expression = result.get(
+                    "expression",
+                    ""
+                )
+
+                answer = result.get(
+                    "result"
+                )
+
+                output = (
+                    f"{expression} = {answer}"
+                )
+
+                print(
+                    f"MANU: {output}"
+                )
+
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": message
+                    }
+                )
+
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": output
+                    }
+                )
+
+                save_memory(
+                    messages[1:]
+                )
+
+            else:
+
+                print(
+                    "MANU:",
+                    result.get(
+                        "error",
+                        "Calculator error."
+                    )
+                )
 
             print()
 
             continue
 
-        result = calculate_expression(
-            expression
+
+        # ==================================
+        # OTHER TOOLS
+        # ==================================
+
+        messages.append(
+            {
+                "role": "user",
+                "content": message
+            }
         )
 
-        print(
-            f"MANU Calculator: {result}"
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Tool result:\n"
+                    + json.dumps(
+                        result,
+                        ensure_ascii=False
+                    )
+                    + "\n\n"
+                    "Answer the user's request using "
+                    "the tool result. "
+                    "Do not mention internal tool mechanics."
+                )
+            }
         )
 
-        print()
+        try:
 
-        continue
-
-
-    # ==============================
-    # SYSTEM INFORMATION TOOL
-    # ==============================
-
-    if message.lower() == "/system":
-
-        print(
-            "MANU System Information"
-        )
-
-        print(
-            "========================"
-        )
-
-        system_info = get_system_info()
-
-        for key, value in system_info.items():
-
-            print(
-                f"{key}: {value}"
+            answer, stats = ask_model(
+                messages
             )
 
-        print()
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": answer
+                }
+            )
 
-        continue
+            save_memory(
+                messages[1:]
+            )
 
+            show_stats(stats)
 
-    # ==============================
-    # FILE TOOL
-    # ==============================
+        except requests.exceptions.RequestException as e:
 
-    if message.lower().startswith("/files"):
+            print(
+                "MANU: Could not connect to Ollama."
+            )
 
-        folder = message[6:].strip()
+            print(
+                f"Error: {e}"
+            )
 
-        if not folder:
-            folder = "."
-
-        print(
-            "MANU File Explorer"
-        )
-
-        print(
-            "=================="
-        )
-
-        files = list_files(folder)
-
-        for item in files:
-
-            print(item)
+            messages.pop()
+            messages.pop()
 
         print()
 
         continue
 
 
-    # ==============================
-    # ADD USER MESSAGE
-    # ==============================
+    # --------------------------------------
+    # NORMAL CHAT
+    # --------------------------------------
 
-    messages.append({
-        "role": "user",
-        "content": message
-    })
-
-
-    # ==============================
-    # OLLAMA REQUEST
-    # ==============================
-
-    data = {
-        "model": current_model,
-        "messages": messages,
-        "think": thinking_enabled,
-        "stream": True
-    }
-
-
-    assistant_response = ""
-
-    final_stats = None
-
+    messages.append(
+        {
+            "role": "user",
+            "content": message
+        }
+    )
 
     try:
 
-        response = requests.post(
-            OLLAMA_URL,
-            json=data,
-            stream=True,
-            timeout=300
+        answer, stats = ask_model(
+            messages
         )
 
-        response.raise_for_status()
-
-
-        print(
-            f"MANU ({current_model}): ",
-            end="",
-            flush=True
+        messages.append(
+            {
+                "role": "assistant",
+                "content": answer
+            }
         )
-
-
-        # ==============================
-        # STREAM RESPONSE
-        # ==============================
-
-        for line in response.iter_lines():
-
-            if not line:
-                continue
-
-
-            chunk = json.loads(line)
-
-
-            if chunk.get("done"):
-
-                final_stats = chunk
-
-                break
-
-
-            content = (
-                chunk
-                .get("message", {})
-                .get("content", "")
-            )
-
-
-            if content:
-
-                print(
-                    content,
-                    end="",
-                    flush=True
-                )
-
-                assistant_response += content
-
-
-        print()
-
-
-        # ==============================
-        # SAVE ASSISTANT RESPONSE
-        # ==============================
-
-        messages.append({
-            "role": "assistant",
-            "content": assistant_response
-        })
-
-
-        # ==============================
-        # SAVE MEMORY
-        # ==============================
 
         save_memory(
             messages[1:]
         )
 
-
-        # ==============================
-        # PERFORMANCE
-        # ==============================
-
-        if final_stats:
-
-            total = (
-                final_stats.get(
-                    "total_duration",
-                    0
-                )
-                / 1_000_000_000
-            )
-
-            load = (
-                final_stats.get(
-                    "load_duration",
-                    0
-                )
-                / 1_000_000_000
-            )
-
-            prompt = (
-                final_stats.get(
-                    "prompt_eval_duration",
-                    0
-                )
-                / 1_000_000_000
-            )
-
-            generation = (
-                final_stats.get(
-                    "eval_duration",
-                    0
-                )
-                / 1_000_000_000
-            )
-
-            tokens = final_stats.get(
-                "eval_count",
-                0
-            )
-
-
-            print(
-                f"[Total: {total:.2f}s | "
-                f"Load: {load:.2f}s | "
-                f"Prompt: {prompt:.2f}s | "
-                f"Generation: {generation:.2f}s | "
-                f"Tokens: {tokens}]"
-            )
-
-
-        print()
-
-
-    # ==============================
-    # CONNECTION ERROR
-    # ==============================
+        show_stats(stats)
 
     except requests.exceptions.RequestException as e:
 
         print(
-            "\nMANU: Could not connect to Ollama."
+            "MANU: Could not connect to Ollama."
         )
 
         print(
             f"Error: {e}"
         )
 
-        print()
-
-
         messages.pop()
 
-
-    # ==============================
-    # JSON ERROR
-    # ==============================
-
-    except json.JSONDecodeError:
-
-        print(
-            "\nMANU: Could not understand Ollama's response."
-        )
-
-        print()
-
-
-        messages.pop()
+    print()
