@@ -1,9 +1,9 @@
-import requests
+﻿import requests
 import json
 import os
 
 from tools.tool_router import route_tool
-from tools.planner import validate_plan
+from tools.planner import validate_plan, create_plan as task_create_plan
 from tools.agent import execute_agent_plan
 
 
@@ -661,9 +661,10 @@ while True:
         "MANU: Planning..."
     )
 
-    plan = create_plan(
-        message
-    )
+    plan = {
+        "goal": message,
+        "steps": task_create_plan(message)
+    }
 
     steps = plan.get(
         "steps",
@@ -751,3 +752,4 @@ while True:
         )
 
     print()
+
