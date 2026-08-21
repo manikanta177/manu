@@ -1,0 +1,26 @@
+[
+  {
+    "role": "user",
+    "content": "my name is mani"
+  },
+  {
+    "role": "assistant",
+    "content": "Hello, Mani! How can I assist you today?"
+  },
+  {
+    "role": "user",
+    "content": "what is my name?"
+  },
+  {
+    "role": "assistant",
+    "content": "Your name is Mani."
+  },
+  {
+    "role": "user",
+    "content": "my friend name in arun"
+  },
+  {
+    "role": "assistant",
+    "content": "Your friend's name is Arun."
+  }
+]
