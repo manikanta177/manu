@@ -1,8 +1,7 @@
-# ==========================================
-# MANU V0.9 SAFETY LAYER
+﻿# ==========================================
+# MANU V1.1 SAFETY LAYER
 # ==========================================
 
-# Tools MANU is allowed to execute
 ALLOWED_TOOLS = {
     "calculator",
     "system_info",
@@ -13,23 +12,22 @@ ALLOWED_TOOLS = {
     "list_tasks",
     "complete_task",
     "delete_task",
+    "remember",
+    "recall",
+    "list_facts",
 }
 
 
 def is_tool_allowed(tool_name):
-    """
-    Check whether MANU is allowed to execute a tool.
-    """
 
     return tool_name in ALLOWED_TOOLS
 
 
 def validate_tool_call(tool_name, arguments):
-    """
-    Validate a tool call before execution.
-    """
 
-    # Check tool permission
+    # ======================================
+    # TOOL PERMISSION
+    # ======================================
 
     if not is_tool_allowed(tool_name):
 
@@ -39,7 +37,9 @@ def validate_tool_call(tool_name, arguments):
         }
 
 
-    # Arguments must be a dictionary
+    # ======================================
+    # ARGUMENT VALIDATION
+    # ======================================
 
     if not isinstance(arguments, dict):
 
@@ -47,6 +47,42 @@ def validate_tool_call(tool_name, arguments):
             "allowed": False,
             "error": "Tool arguments must be a dictionary."
         }
+
+
+    # ======================================
+    # MEMORY SAFETY
+    # ======================================
+
+    if tool_name == "remember":
+
+        key = arguments.get("key")
+        value = arguments.get("value")
+
+        if not key:
+
+            return {
+                "allowed": False,
+                "error": "Memory key is required."
+            }
+
+        if value is None or not str(value).strip():
+
+            return {
+                "allowed": False,
+                "error": "Memory value is required."
+            }
+
+
+    if tool_name == "recall":
+
+        key = arguments.get("key")
+
+        if not key:
+
+            return {
+                "allowed": False,
+                "error": "Memory key is required."
+            }
 
 
     # ======================================
@@ -166,6 +202,22 @@ if __name__ == "__main__":
         ),
 
         (
+            "remember",
+            {
+                "key": "name",
+                "value": "Mani"
+            }
+        ),
+
+        (
+            "recall",
+    "list_facts",
+            {
+                "key": "name"
+            }
+        ),
+
+        (
             "read_file",
             {
                 "filename": "test.txt"
@@ -206,3 +258,4 @@ if __name__ == "__main__":
         print(
             f"Validation: {result}"
         )
+

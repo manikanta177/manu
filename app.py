@@ -69,7 +69,55 @@ def save_memory(memory):
             f"MANU: Could not save memory: {e}"
         )
 
+# ==========================================
+# LONG-TERM MEMORY
+# ==========================================
 
+FACTS_FILE = "facts.json"
+
+
+def load_facts():
+
+    if not os.path.exists(FACTS_FILE):
+        return {}
+
+    try:
+
+        with open(
+            FACTS_FILE,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            return json.load(file)
+
+    except (json.JSONDecodeError, OSError):
+
+        return {}
+
+
+def save_facts(facts):
+
+    try:
+
+        with open(
+            FACTS_FILE,
+            "w",
+            encoding="utf-8"
+        ) as file:
+
+            json.dump(
+                facts,
+                file,
+                indent=2,
+                ensure_ascii=False
+            )
+
+    except OSError as e:
+
+        print(
+            f"MANU: Could not save facts: {e}"
+        )
 # ==========================================
 # SYSTEM MESSAGE
 # ==========================================
@@ -526,6 +574,7 @@ def show_stats(stats):
 # ==========================================
 
 memory = load_memory()
+facts = load_facts()
 
 messages = [
     system_message

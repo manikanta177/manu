@@ -1,8 +1,8 @@
 # ==========================================
-# MANU V1.0 TASK-AWARE PLANNER
+# MANU V1.1 TASK-AWARE PLANNER
 # ==========================================
 
-import json
+import re
 
 
 # ==========================================
@@ -64,35 +64,70 @@ TOOL_DESCRIPTIONS = {
 def validate_plan(plan):
 
     if not isinstance(plan, list):
-
         return False
 
     for step in plan:
 
         if not isinstance(step, dict):
-
             return False
 
         if "tool" not in step:
-
             return False
 
         if "arguments" not in step:
-
             return False
 
         if step["tool"] not in AVAILABLE_TOOLS:
-
             return False
 
-        if not isinstance(
-            step["arguments"],
-            dict
-        ):
-
+        if not isinstance(step["arguments"], dict):
             return False
 
     return True
+
+
+# ==========================================
+# CALCULATOR DETECTION
+# ==========================================
+
+def is_math_request(message):
+
+    calculation_words = [
+        "calculate",
+        "compute",
+        "solve"
+    ]
+
+    if any(
+        word in message
+        for word in calculation_words
+    ):
+        return True
+
+    # "what is 25 * 25" should be calculator
+    if "what is" in message:
+
+        has_number = any(
+            char.isdigit()
+            for char in message
+        )
+
+        has_operator = any(
+            operator in message
+            for operator in [
+                "+",
+                "-",
+                "*",
+                "/",
+                "%",
+                "^"
+            ]
+        )
+
+        if has_number and has_operator:
+            return True
+
+    return False
 
 
 # ==========================================
@@ -104,33 +139,35 @@ def create_plan(user_message):
     message = user_message.lower().strip()
 
 
-    # --------------------------------------
+    # ======================================
     # CALCULATOR
-    # --------------------------------------
+    # ======================================
 
-    calculation_words = [
-        "calculate",
-        "what is",
-        "compute",
-        "solve"
-    ]
+    if is_math_request(message):
 
-    if any(
-        word in message
-        for word in calculation_words
-    ):
+        expression = message
 
-        expression = (
-            message
-            .replace("calculate", "")
-            .replace("compute", "")
-            .replace("solve", "")
-            .strip()
-        )
+        prefixes = [
+            "calculate",
+            "compute",
+            "solve"
+        ]
+
+        for prefix in prefixes:
+
+            if expression.startswith(prefix):
+
+                expression = expression[
+                    len(prefix):
+                ].strip()
+
+                break
 
         if expression.startswith("what is"):
 
-            expression = expression[7:].strip()
+            expression = expression[
+                len("what is"):
+            ].strip()
 
         return [
             {
@@ -141,10 +178,126 @@ def create_plan(user_message):
             }
         ]
 
+    # ======================================
+    # REMEMBER
+    # ======================================
 
-    # --------------------------------------
+    if (
+        "remember that" in message
+        or "remember my" in message
+        or "remember this" in message
+    ):
+
+        text = user_message.strip()
+
+        if "remember that" in message:
+
+            fact = text[
+                message.find("remember that") + len("remember that"):
+            ].strip()
+
+        elif "remember my" in message:
+
+            fact = text[
+                message.lower().find("remember my") + len("remember my"):
+            ].strip()
+
+        else:
+
+            fact = text[
+                message.lower().find("remember this") + len("remember this"):
+            ].strip()
+
+
+        if "=" in fact:
+
+            key, value = fact.split(
+                "=",
+                1
+            )
+
+        elif " is " in fact:
+
+            key, value = fact.split(
+                " is ",
+                1
+            )
+
+        else:
+
+            key = "general"
+            value = fact
+
+
+        key = key.strip()
+        value = value.strip()
+
+        if key.lower().startswith("my "):
+
+            key = key[3:]
+
+
+        return [
+            {
+                "tool": "remember",
+                "arguments": {
+                    "key": key,
+                    "value": value
+                }
+            }
+        ]
+    # ======================================
+    # RECALL
+    # ======================================
+
+    if (
+        message.startswith("what is my ")
+        or message.startswith("what's my ")
+    ):
+
+        key = message
+
+        if message.startswith("what is my "):
+
+            key = message[
+                len("what is my "):
+            ]
+
+        elif message.startswith("what's my "):
+
+            key = message[
+                len("what's my "):
+            ]
+
+        key = key.strip(
+            " ?!."
+        )
+
+        if key:
+
+            return [
+                {
+                    "tool": "recall",
+                    "arguments": {
+                        "key": key
+                    }
+                }
+            ]
+
+
+    if message == "who am i":
+
+        return [
+            {
+                "tool": "recall",
+                "arguments": {
+                    "key": "name"
+                }
+            }
+        ]
+
     # ADD TASK
-    # --------------------------------------
+    # ======================================
 
     if (
         "add a task" in message
@@ -185,18 +338,39 @@ def create_plan(user_message):
         ]
 
 
-    # --------------------------------------
-    # LIST TASKS
-    # --------------------------------------
+    # ======================================
+    # LIST FACTS
+    # ======================================
 
     if (
-    "show my tasks" in message
-    or "show me my tasks" in message
-    or "show tasks" in message
-    or "list my tasks" in message
-    or "list tasks" in message
-    or message == "my tasks"
-):
+        "show my facts" in message
+        or "show me my facts" in message
+        or "what do you remember about me" in message
+        or "what do you know about me" in message
+        or "list my facts" in message
+        or "list facts" in message
+        or message == "my facts"
+    ):
+
+        return [
+            {
+                "tool": "list_facts",
+                "arguments": {}
+            }
+        ]
+
+    # ======================================
+    # LIST TASKS
+    # ======================================
+
+    if (
+        "show my tasks" in message
+        or "show me my tasks" in message
+        or "show tasks" in message
+        or "list my tasks" in message
+        or "list tasks" in message
+        or message == "my tasks"
+    ):
 
         return [
             {
@@ -206,17 +380,15 @@ def create_plan(user_message):
         ]
 
 
-    # --------------------------------------
+    # ======================================
     # COMPLETE TASK
-    # --------------------------------------
+    # ======================================
 
     if (
         "complete task" in message
         or "finish task" in message
         or "mark task" in message
     ):
-
-        import re
 
         match = re.search(
             r"\btask\s+(\d+)\b",
@@ -239,16 +411,14 @@ def create_plan(user_message):
             ]
 
 
-    # --------------------------------------
+    # ======================================
     # DELETE TASK
-    # --------------------------------------
+    # ======================================
 
     if (
         "delete task" in message
         or "remove task" in message
     ):
-
-        import re
 
         match = re.search(
             r"\btask\s+(\d+)\b",
@@ -271,17 +441,15 @@ def create_plan(user_message):
             ]
 
 
-    # --------------------------------------
+    # ======================================
     # FILE CREATION
-    # --------------------------------------
+    # ======================================
 
     if (
         "create a file" in message
         or "create file" in message
         or "write a file" in message
     ):
-
-        import re
 
         filename_match = re.search(
             r"(?:file called|file named|file)\s+([^\s]+)",
@@ -315,34 +483,31 @@ def create_plan(user_message):
             ]
 
 
-    # --------------------------------------
+    # ======================================
     # FILE READING
-    # --------------------------------------
+    # ======================================
 
     if (
         message.startswith("read ")
-        or "read file" in message
+        or message.startswith("open ")
     ):
 
         filename = ""
 
-        if message.startswith("read "):
+        prefixes = [
+            "read ",
+            "open "
+        ]
 
-            filename = user_message[5:].strip()
+        for prefix in prefixes:
 
-        else:
+            if message.startswith(prefix):
 
-            import re
+                filename = user_message[
+                    len(prefix):
+                ].strip()
 
-            match = re.search(
-                r"read file\s+(.+)",
-                user_message,
-                re.IGNORECASE
-            )
-
-            if match:
-
-                filename = match.group(1).strip()
+                break
 
         if filename:
 
@@ -356,40 +521,48 @@ def create_plan(user_message):
             ]
 
 
-    # --------------------------------------
-    # NO TOOL REQUIRED
-    # --------------------------------------
+    # ======================================
+    # LIST FILES
+    # ======================================
 
-    return []
-
-
-# ==========================================
-# PLAN DISPLAY
-# ==========================================
-
-def print_plan(plan):
-
-    print()
-    print("MANU Plan")
-    print("=========")
-
-    if not plan:
-
-        print("No tools required.")
-
-        return
-
-
-    for index, step in enumerate(
-        plan,
-        start=1
+    if (
+        "list files" in message
+        or "show files" in message
+        or message == "files"
     ):
 
-        print(
-            f"{index}. "
-            f"{step['tool']} "
-            f"{step['arguments']}"
-        )
+        return [
+            {
+                "tool": "list_files",
+                "arguments": {}
+            }
+        ]
+
+
+    # ======================================
+    # SYSTEM INFORMATION
+    # ======================================
+
+    if (
+        "system info" in message
+        or "system information" in message
+        or "computer information" in message
+        or "computer specs" in message
+    ):
+
+        return [
+            {
+                "tool": "system_info",
+                "arguments": {}
+            }
+        ]
+
+
+    # ======================================
+    # NO TOOL REQUIRED
+    # ======================================
+
+    return []
 
 
 # ==========================================
@@ -398,13 +571,13 @@ def print_plan(plan):
 
 if __name__ == "__main__":
 
-    print("MANU Planner V1.0")
-    print("=================")
-
-
-    tests = [
+    test_requests = [
 
         "calculate 25 * 25",
+
+        "what is 25 * 25",
+
+        "what is my name",
 
         "Add a task called Finish MANU V1",
 
@@ -416,24 +589,40 @@ if __name__ == "__main__":
 
         "Create a file called test.txt with the content Hello MANU",
 
-        "Read test.txt"
+        "Read test.txt",
+
+        "Show me my files"
     ]
 
+    print("MANU Planner V1.1")
+    print("=================")
 
-    for test in tests:
+    for request in test_requests:
 
         print()
-        print(
-            f"Goal: {test}"
-        )
+        print("Goal:", request)
+        print()
+        print("MANU Plan")
+        print("=========")
 
-        plan = create_plan(
-            test
-        )
+        plan = create_plan(request)
 
-        print_plan(
-            plan
-        )
+        if not plan:
+
+            print("No tools required.")
+
+        else:
+
+            for index, step in enumerate(
+                plan,
+                start=1
+            ):
+
+                print(
+                    f"{index}. "
+                    f"{step['tool']} "
+                    f"{step['arguments']}"
+                )
 
         print(
             "Plan validation:",

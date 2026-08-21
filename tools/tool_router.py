@@ -1,5 +1,5 @@
 # ==========================================
-# MANU V1.0 TOOL ROUTER
+# MANU V1.1 TOOL ROUTER
 # ==========================================
 
 from tools.calculator import calculate
@@ -13,6 +13,8 @@ from tools.task_manager import (
     complete_task,
     delete_task
 )
+
+from tools.memory import remember, recall, list_facts
 
 
 # ==========================================
@@ -120,6 +122,50 @@ def route_tool(tool_name, arguments):
 
 
     # --------------------------------------
+    # REMEMBER
+    # --------------------------------------
+
+    if tool_name == "remember":
+
+        key = arguments.get(
+            "key",
+            ""
+        )
+
+        value = arguments.get(
+            "value",
+            ""
+        )
+
+        return remember(
+            key,
+            value
+        )
+
+    # --------------------------------------
+    # RECALL
+    # --------------------------------------
+
+    if tool_name == "recall":
+
+        key = arguments.get(
+            "key",
+            ""
+        )
+
+        return recall(
+            key
+        )
+
+    # --------------------------------------
+    # LIST FACTS
+    # --------------------------------------
+
+    if tool_name == "list_facts":
+
+        return list_facts()
+
+    # --------------------------------------
     # UNKNOWN TOOL
     # --------------------------------------
 
@@ -143,7 +189,9 @@ AVAILABLE_TOOLS = [
     "add_task",
     "list_tasks",
     "complete_task",
-    "delete_task"
+    "delete_task",
+
+    "remember"
 
 ]
 
@@ -154,7 +202,7 @@ AVAILABLE_TOOLS = [
 
 if __name__ == "__main__":
 
-    print("MANU Tool Router V1.0")
+    print("MANU Tool Router V1.1")
     print("=====================")
 
     print()
@@ -187,7 +235,7 @@ if __name__ == "__main__":
         route_tool(
             "add_task",
             {
-                "title": "Test MANU V1 task"
+                "title": "Test MANU V1.1 task"
             }
         )
     )
