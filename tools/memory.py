@@ -1,4 +1,4 @@
-﻿# ==========================================
+# ==========================================
 # MANU V1.1 MEMORY SYSTEM
 # ==========================================
 
@@ -157,6 +157,46 @@ def list_facts():
         "facts": facts
     }
 
+
+# ==========================================
+# FORGET
+# ==========================================
+
+def forget(key):
+
+    key = str(key).strip()
+
+    if not key:
+
+        return {
+            "success": False,
+            "error": "Memory key cannot be empty."
+        }
+
+    facts = load_facts()
+
+    if key not in facts:
+
+        return {
+            "success": False,
+            "error": f"No memory found for '{key}'."
+        }
+
+    old_value = facts.pop(key)
+
+    if not save_facts(facts):
+
+        return {
+            "success": False,
+            "error": "Could not save memory."
+        }
+
+    return {
+        "success": True,
+        "message": "Fact forgotten successfully.",
+        "key": key,
+        "value": old_value
+    }
 
 # ==========================================
 # TEST

@@ -14,7 +14,7 @@ from tools.task_manager import (
     delete_task
 )
 
-from tools.memory import remember, recall, list_facts
+from tools.memory import remember, recall, list_facts, forget
 
 
 # ==========================================
@@ -164,6 +164,22 @@ def route_tool(tool_name, arguments):
     if tool_name == "list_facts":
 
         return list_facts()
+
+    # --------------------------------------
+    # FORGET
+    # --------------------------------------
+
+    if tool_name == "forget":
+
+        key = arguments.get(
+            "key",
+            ""
+        )
+
+        return forget(
+            key
+        )
+
 
     # --------------------------------------
     # UNKNOWN TOOL

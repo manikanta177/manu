@@ -296,6 +296,26 @@ def create_plan(user_message):
             }
         ]
 
+    # ======================================
+    # FORGET MEMORY
+    # ======================================
+
+    if 'forget my ' in message or 'forget the ' in message or 'delete my memory' in message or 'forget memory' in message:
+
+        key = ''
+
+        if 'forget my ' in message:
+            key = message.split('forget my ', 1)[1].strip()
+        elif 'forget the ' in message:
+            key = message.split('forget the ', 1)[1].strip()
+        elif 'delete my memory' in message:
+            key = message.replace('delete my memory', '').strip()
+        elif 'forget memory' in message:
+            key = message.replace('forget memory', '').strip()
+
+        return [{'tool': 'forget', 'arguments': {'key': key}}]
+
+
     # ADD TASK
     # ======================================
 
