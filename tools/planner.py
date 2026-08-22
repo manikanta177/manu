@@ -18,7 +18,11 @@ AVAILABLE_TOOLS = [
     "add_task",
     "list_tasks",
     "complete_task",
-    "delete_task"
+    "delete_task",
+    "remember",
+    "recall",
+    "list_facts",
+    "forget"
 ]
 
 
@@ -475,11 +479,10 @@ def create_plan(user_message):
             r"(?:file called|file named|file)\s+([^\s]+)",
             message
         )
-
         content_match = re.search(
-            r"content\s+(.+)",
-            user_message,
-            re.IGNORECASE
+          r"(?:content|containing)\s+(.+)",
+          user_message,
+          re.IGNORECASE
         )
 
         if filename_match:

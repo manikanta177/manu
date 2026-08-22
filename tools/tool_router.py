@@ -207,7 +207,10 @@ AVAILABLE_TOOLS = [
     "complete_task",
     "delete_task",
 
-    "remember"
+    "remember",
+    "recall",
+    "list_facts",
+    "forget"
 
 ]
 

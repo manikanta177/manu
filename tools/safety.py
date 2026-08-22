@@ -212,8 +212,16 @@ if __name__ == "__main__":
 
         (
             "recall",
-    "list_facts",
-    "forget",
+            {
+                "key": "name"
+            }
+        ),
+        (
+            "list_facts",
+            {}
+        ),
+        (
+            "forget",
             {
                 "key": "name"
             }
